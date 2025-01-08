@@ -1,3 +1,5 @@
+
+
 #define railwaylimitSwitchForward 18   
 #define railwaylimitSwitchReverse  21   
 #define railwayForward 38    
@@ -16,30 +18,12 @@ volatile bool stopReverse = false;
 
 volatile bool stopMixerUP = false;  
 volatile bool stopMixerDown = false;  
-
-int mixingTimeInMinutes = 1; 
-unsigned long mixingStartTime = 0; 
 bool isMixing = false;
 
-void mixerUpInterrupt(){
-  stopMixerUP = true;
-  Serial.println("Mixer Up interrupt triggered.");
-}
+#define mixerStartTime 6000  // 6 seconds in milliseconds (change to 1200000 for 20 minutes)
 
-void mixerDownInterrupt(){
-  stopMixerDown = true;
-  Serial.println("Mixer Down interrupt triggered.");
-}
-
-void forwardInterrupt() {
-  stopForward = true;  
-  Serial.println("Forward limit switch pressed. Stopping forward movement.");
-}
-
-void reverseInterrupt() {
-  stopReverse = true;  
-  Serial.println("Reverse limit switch pressed. Stopping reverse movement.");
-}
+unsigned long mixerStartMillis = 0;
+bool isMixerRunning = false;
 
 void forwardFunction() {
   digitalWrite(railwayForward , HIGH);
@@ -73,14 +57,16 @@ void mixerMoveDown() {
 
 void stopMixersMotor() {
   Serial.println("Mixers Motor stopped.");
-  digitalWrite(mixerDown ,  HIGH);  
-  digitalWrite(mixerUp,HIGH);
+  digitalWrite(mixerDown , HIGH);  
+  digitalWrite(mixerUp, HIGH);
 }
 
 void startMixers() {
   Serial.println("Mixers started.");
   digitalWrite(mixerOne , LOW);  
   digitalWrite(mixerTwo, LOW);
+  mixerStartMillis = millis();  // Store the time when mixers start
+  isMixerRunning = true;
 }
 
 void stopMixers() {
@@ -97,9 +83,6 @@ void setup() {
   pinMode(railwayForward, OUTPUT);          
   pinMode(railwayReverse, OUTPUT);         
 
-  attachInterrupt(digitalPinToInterrupt(railwaylimitSwitchForward), forwardInterrupt, FALLING); 
-  attachInterrupt(digitalPinToInterrupt(railwaylimitSwitchReverse), reverseInterrupt, FALLING); 
-
   pinMode(mixerlimitSwitchUp, INPUT_PULLUP); 
   pinMode(mixerlimitSwitchDown, INPUT_PULLUP); 
   pinMode(mixerOne, OUTPUT);          
@@ -107,44 +90,49 @@ void setup() {
   pinMode(mixerUp, OUTPUT);          
   pinMode(mixerDown, OUTPUT); 
 
-  attachInterrupt(digitalPinToInterrupt(mixerlimitSwitchUp), mixerUpInterrupt, FALLING); 
-  attachInterrupt(digitalPinToInterrupt(mixerlimitSwitchDown), mixerDownInterrupt, FALLING); 
-
-  Serial.println("System setup complete.");
+  digitalWrite(mixerOne, HIGH); 
+  digitalWrite(mixerTwo, HIGH);
 }
+
 void loop() {
 
-if (stopForward){
-  reverseFunction();
-  stopForward=false;
-}
-  if (stopReverse && systemStart) {
-    stopReverse = false; 
-    stopRailwayMovement(); 
+ 
+  // Check for limit switch presses
+ if (digitalRead(railwaylimitSwitchForward) == LOW) {  // Forward switch pressed
+    Serial.println("Forward limit switch pressed. Stopping forward movement.");
+    reverseFunction();  // Call reverse function when forward button is pressed
+  }
+
+  if (digitalRead(railwaylimitSwitchReverse) == LOW) {  // Reverse switch pressed
+    Serial.println("Reverse limit switch pressed. Stopping reverse movement.");
+    forwardFunction();
+    delay(1000);
+    stopRailwayMovement();
+    mixerMoveDown();  // Start moving the mixer down when reverse button is pressed
+  }
+
+  if (digitalRead(mixerlimitSwitchUp) == LOW) {  // Mixer Up switch pressed
     mixerMoveDown();
-  }
-
-  if (!isMixing && stopMixerDown) {
+    delay(1000);
     stopMixersMotor();
-    stopMixerDown = false; 
-    mixingStartTime = millis(); 
-    isMixing = true;
-    startMixers();
-   
+    forwardFunction();  // Start forward movement when mixerUp is pressed
   }
 
-  if (isMixing && millis() - mixingStartTime >= mixingTimeInMinutes * 60000) { 
-    stopMixers(); 
-    mixerMoveUp(); 
-    isMixing = false;
-   
-  }
-
-
-  if (stopMixerUP) {
-    stopMixerUP = false;  
+  if (digitalRead(mixerlimitSwitchDown) == LOW) {  // Mixer Down switch pressed
+    mixerMoveUp();
+    delay(1000);
     stopMixersMotor();
-    forwardFunction(); 
-    
+    if (!isMixerRunning) {
+      startMixers();  // Start mixers when mixerDown switch is pressed
+    }
   }
+
+  // If mixers are running and 20 minutes have passed (change to 1200000 ms for 20 minutes)
+  if (isMixerRunning && (millis() - mixerStartMillis >= mixerStartTime)) {
+    stopMixers();  // Stop the mixers after 20 minutes
+    mixerMoveUp();  // Move the mixer up after 20 minutes
+    isMixerRunning = false;  // Stop the mixer running state
+  }
+  
+  // Add any other logic needed for your system
 }
