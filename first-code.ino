@@ -1,4 +1,10 @@
+#include <Arduino.h>
+#include <Keypad.h>
+#include <Servo.h>
+#define directionPin 28
+#define stepPin 29
 
+#define stepsPerRevolution 6400 
 
 #define railwaylimitSwitchForward 18   
 #define railwaylimitSwitchReverse  21   
@@ -11,6 +17,19 @@
 #define mixerTwo 25
 #define mixerUp 26
 #define mixerDown 27
+
+const byte ROWS = 2; 
+const byte COLS = 1; 
+
+char keys[ROWS][COLS] = {
+  {'1'},   
+  {'2'}
+};
+
+byte pin_rows[ROWS] = {4, 5};    
+byte pin_column[COLS] = {};    
+Keypad keypad = Keypad(makeKeymap(keys), pin_rows, pin_column, ROWS, COLS);
+Servo myServo;
 
 volatile bool systemStart = true;  
 volatile bool stopForward = false;  
@@ -65,7 +84,7 @@ void startMixers() {
   Serial.println("Mixers started.");
   digitalWrite(mixerOne , LOW);  
   digitalWrite(mixerTwo, LOW);
-  mixerStartMillis = millis();  // Store the time when mixers start
+  mixerStartMillis = millis();  
   isMixerRunning = true;
 }
 
@@ -75,8 +94,37 @@ void stopMixers() {
   digitalWrite(mixerTwo, HIGH);
 }
 
+int cocoaAdding (){
+  int choose;
+  char key = keypad.getKey();    
+  if (key) {
+    Serial.print("Key pressed: ");
+    Serial.println(key);
+    
+    if (key == '1') {           
+      myServo.write(0);         
+      delay(2000);              
+      myServo.write(90);  
+     choose=0;
+    }
+    else if(key == '2'){
+        choose=1;
+    }
+
+  }
+  else  choose=2;
+}
+
 void setup() {
   Serial.begin(9600);  
+  //cocoa
+  myServo.attach(7);           
+  Serial.begin(9600);
+  delay(2000);
+  myServo.write(90);         
+
+  pinMode(directionPin, OUTPUT);
+  pinMode(stepPin, OUTPUT);
 
   pinMode(railwaylimitSwitchForward, INPUT_PULLUP); 
   pinMode(railwaylimitSwitchReverse, INPUT_PULLUP); 
@@ -97,42 +145,41 @@ void setup() {
 void loop() {
 
  
-  // Check for limit switch presses
- if (digitalRead(railwaylimitSwitchForward) == LOW) {  // Forward switch pressed
+ if (digitalRead(railwaylimitSwitchForward) == LOW) { 
     Serial.println("Forward limit switch pressed. Stopping forward movement.");
-    reverseFunction();  // Call reverse function when forward button is pressed
+    reverseFunction(); 
   }
 
-  if (digitalRead(railwaylimitSwitchReverse) == LOW) {  // Reverse switch pressed
+  if (digitalRead(railwaylimitSwitchReverse) == LOW) {  
     Serial.println("Reverse limit switch pressed. Stopping reverse movement.");
     forwardFunction();
     delay(1000);
     stopRailwayMovement();
-    mixerMoveDown();  // Start moving the mixer down when reverse button is pressed
+    mixerMoveDown();  
   }
 
-  if (digitalRead(mixerlimitSwitchUp) == LOW) {  // Mixer Up switch pressed
+  if (digitalRead(mixerlimitSwitchUp) == LOW) {  
     mixerMoveDown();
     delay(1000);
     stopMixersMotor();
-    forwardFunction();  // Start forward movement when mixerUp is pressed
+    forwardFunction(); 
   }
 
-  if (digitalRead(mixerlimitSwitchDown) == LOW) {  // Mixer Down switch pressed
+  if (digitalRead(mixerlimitSwitchDown) == LOW) { 
     mixerMoveUp();
     delay(1000);
     stopMixersMotor();
     if (!isMixerRunning) {
-      startMixers();  // Start mixers when mixerDown switch is pressed
+      startMixers(); 
     }
   }
 
-  // If mixers are running and 20 minutes have passed (change to 1200000 ms for 20 minutes)
+  
   if (isMixerRunning && (millis() - mixerStartMillis >= mixerStartTime)) {
-    stopMixers();  // Stop the mixers after 20 minutes
-    mixerMoveUp();  // Move the mixer up after 20 minutes
-    isMixerRunning = false;  // Stop the mixer running state
+    stopMixers(); 
+    mixerMoveUp();  
+    isMixerRunning = false; 
   }
   
-  // Add any other logic needed for your system
+
 }
