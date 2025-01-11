@@ -2,6 +2,10 @@
 #include <Keypad.h>
 #include <Servo.h>
 
+#define pushlimitSwitchUp 6
+#define pushlimitSwitchDown 20 
+#define valveOpenPin 40
+#define valveClosePin 41
 #define directionPin 28
 #define stepPin 29
 
@@ -12,13 +16,17 @@
 #define railwayForward 38    
 #define railwayReverse 39  
 
-#define mixerlimitSwitchUp 3
+#define mixerlimitSwitchUp 7
 #define mixerlimitSwitchDown 19 
 #define mixerOne 24
 #define mixerTwo 25
 #define mixerUp 26
 #define mixerDown 27
 
+typedef enum {
+  Push_UP,
+  Push_down
+}PUSH;
 const byte ROWS = 2; 
 const byte COLS = 1; 
 
@@ -38,7 +46,7 @@ const unsigned long mixerRunDuration = 6000; // 6 seconds
 
 void setup() {
   Serial.begin(9600);
-  myServo.attach(7);
+  myServo.attach(8);
   myServo.write(90);
 
   pinMode(directionPin, OUTPUT);
@@ -58,10 +66,16 @@ void setup() {
 
   digitalWrite(mixerOne, HIGH); 
   digitalWrite(mixerTwo, HIGH);
+
+  pinMode(pushlimitSwitchUp, INPUT_PULLUP); 
+  pinMode( pushlimitSwitchDown, INPUT_PULLUP); 
+
 }
 
 void loop() {
-  if (!handleRailwayMovement()) {
+
+  mixerMoveDown();
+  /*if (!handleRailwayMovement()) {
     Serial.println("Error handling railway movement.");
   }
 
@@ -69,15 +83,16 @@ void loop() {
   if (!handleMixerMovement()) {
     Serial.println("Error handling mixer movement.");
   }
+  */
 }
 
 bool handleRailwayMovement() {
   if (digitalRead(railwaylimitSwitchForward) == LOW) {
-    Serial.println("Forward limit switch pressed.");
-    if (!reverseFunction()) {
-      Serial.println("Failed to execute reverse function.");
-      return false;
-    }
+     reverseFunction();
+     delay(1000);
+     stopRailwayMovement();
+     movePushStepper(stepsPerRevolution, Push_down);
+
   } else if (digitalRead(railwaylimitSwitchReverse) == LOW) {
     Serial.println("Reverse limit switch pressed.");
     if (!forwardFunction()) {
@@ -92,6 +107,7 @@ bool handleRailwayMovement() {
     }
   }
   return true;
+  
 }
 
 bool handleMixerMovement() {
@@ -215,3 +231,67 @@ int cocoaAdding() {
   return choose; 
 }
 
+void movePushStepper(int steps, bool direction) {
+  if(direction==0){
+     digitalWrite(directionPin, HIGH);
+  for (int i = 0; i < steps/5; i++) {
+    digitalWrite(stepPin, HIGH);
+
+    delayMicroseconds(300);
+    digitalWrite(stepPin, LOW);
+    delayMicroseconds(300);
+  }
+   for (int i = 0; i < steps; i++) {
+    digitalWrite(stepPin, HIGH);
+
+    delayMicroseconds(70);
+    digitalWrite(stepPin, LOW);
+    delayMicroseconds(70);
+  }
+  }
+  else  {
+    digitalWrite(directionPin, LOW);
+ 
+  for (int i = 0; i < steps; i++) {
+    digitalWrite(stepPin, HIGH);
+
+    delayMicroseconds(70);
+    digitalWrite(stepPin, LOW);
+    delayMicroseconds(70);
+  }
+   for (int i = 0; i < steps/5; i++) {
+    digitalWrite(stepPin, HIGH);
+
+    delayMicroseconds(300);
+    digitalWrite(stepPin, LOW);
+    delayMicroseconds(300);
+  }
+  }
+}
+
+bool valveOpen() {
+  digitalWrite(valveOpenPin,LOW);
+  digitalWrite(valveClosePin, HIGH);
+  Serial.println("Valve opening.");
+  return true;
+}
+
+bool valveClose() {
+  digitalWrite(valveClosePin,LOW);
+  digitalWrite(valveOpenPin, HIGH);
+  Serial.println("Valve closing");
+  return true;
+}
+
+void stopValveMovement() {
+  digitalWrite(valveClosePin,HIGH);
+  digitalWrite(valveOpenPin, HIGH);
+  Serial.println("Valve Stoped");
+}
+
+
+void handelValveMovement(){
+  valveOpen();
+  delay(5000);
+  stopValveMovement();
+}
