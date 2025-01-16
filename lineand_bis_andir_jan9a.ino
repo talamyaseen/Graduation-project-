@@ -1,9 +1,7 @@
 #include <Servo.h>
-
 // تعريف السيرفو
 Servo myServoUP;    // سيرفو لحركة رفع البسكويت
 Servo myServoDown;  // سيرفو لتنزيل البسكويت
-
 // تعريف دبابيس مستشعرات IR
 #define IR_SENSOR_1_PIN 16 // مستشعر IR الأول
 #define IR_SENSOR_2_PIN 8  // مستشعر IR الثاني
@@ -38,7 +36,7 @@ void dropBiscuit() {
   if (!biscuitDropped) {  // إذا لم يتم تنزيل البسكويت من قبل
     // حركة السيرفو لتنزيل البسكويت
     myServoUP.write(0);      // تحريك السيرفو الأول لرفع البسكويت
-    delay(100);              // انتظار
+    delay(200);              // انتظار
     myServoUP.write(72);     // إعادة السيرفو الأول للوضع الافتراضي
     delay(2000);             // انتظار بسيط
 
