@@ -1,30 +1,57 @@
 #include <Arduino.h>
 #include <Keypad.h>
 #include <Servo.h>
+#include <Stepper.h>
+#include "max6675.h"
 
 #define pushlimitSwitchUp 20
 #define pushlimitSwitchDown 19
 #define valveOpenPin 40
 #define valveClosePin 41
-#define directionPin 25
-#define stepPin 24
+#define directionPin 3
+#define stepPin 25
 
 #define stepsPerRevolution 6400 
 
 #define railwaylimitSwitchForward 15
 #define railwaylimitSwitchReverse 14   
 #define railwayForward 4
-#define railwayReverse 3  
+#define railwayReverse 5  
 
-#define mixerlimitSwitchUp 21
+#define mixerlimitSwitchUp 10
 #define mixerlimitSwitchDown 18 
 #define mixerOne 26
 #define mixerTwo 27
 #define mixerUp 7
 #define mixerDown 6
 
+
+
+// تعريف دبابيس مستشعرات IR
+#define IR_SENSOR_1_PIN 16 // مستشعر IR الأول
+#define IR_SENSOR_2_PIN 8  // مستشعر IR الثاني
+#define RELAY_PIN 22       // دبوس التحكم بالموتور
+
+
 const byte ROWS = 1; // صف واحد
 const byte COLS = 2; // عمودان فقط (للزرين المستخدمين)
+
+
+// تعريف دبابيس مستشعر الحرارة MAX6675
+int ktcSO = 12;
+int ktcCS = 11;
+int ktcCLK = 13;
+
+// تعريف دبابيس السخان
+const int heaterPin = 23; // دبوس التحكم بالسخان
+
+//pins nema17
+// تعريف المنافذ المتصلة بـ H-Bridge
+const int IN1 = 50;  // أول مدخل للمحرك
+const int IN2 = 51;  // ثاني مدخل للمحرك
+const int IN3 = 48; // ثالث مدخل للمحرك
+const int IN4 = 49; // رابع مدخل للمحرك
+
 
 char keys[ROWS][COLS] = {
   {'1', '2'} // الزرين المستخدمين
@@ -34,8 +61,13 @@ byte pin_rows[ROWS] = {32};       // الدبوس الموصل بالصف
 byte pin_column[COLS] = {31,30};  // الدبابيس الموصلة بالعمودين للزرين
 Keypad keypad = Keypad(makeKeymap(keys), pin_rows, pin_column, ROWS, COLS);
 
+
 // تعريف السيرفو
 Servo myServo;
+// تعريف السيرفو
+Servo myServoUP;    // سيرفو لحركة رفع البسكويت
+Servo myServoDown;  // سيرفو لتنزيل البسكويت
+
 
 volatile bool systemStart = true;  
 volatile bool stopForward = false;  
@@ -45,10 +77,36 @@ volatile bool stopMixerUP = false;
 volatile bool stopMixerDown = false;  
 bool isMixing = false;
 
+
+bool isCocoaDone = false;
+
+
+// تعريف أعلام التحكم
+bool creamFlag = false;       // علم خاص بالكريمة
+//bool chocolateFlag = false;   // علم خاص بالشوكولاتة
+bool biscuitDropped = false; // علم لتنزيل البسكويت مرة واحدة
+bool creamIR=false;
+bool stepperC=false;
+bool up=false;
 #define mixerStartTime 6000  // 6 seconds in milliseconds (change to 1200000 for 20 minutes)
 
 unsigned long mixerStartMillis = 0;
 bool isMixerRunning = false;
+
+
+#define STEPS_PER_REV 200
+
+// تهيئة مكتبة MAX6675
+MAX6675 ktc(ktcCLK, ktcCS, ktcSO);
+
+//nema23
+// تهيئة مكتبة Stepper مع دبابيس H-Bridge المتصلة بالمحرك الخطوي
+Stepper myStepper(STEPS_PER_REV, 46, 47, 44, 45);
+// إنشاء كائن للتحكم بالمحرك
+//nema17
+Stepper stepper(STEPS_PER_REV, IN1, IN2, IN3, IN4);
+
+const int heatTime = 10000; // مدة تشغيل السخان (بالمللي ثانية)
 
 void forwardFunction() {
   digitalWrite(railwayForward , HIGH);
@@ -152,37 +210,47 @@ void moveStepper(int direction, int speed, int steps) {
   }
 }
 
-/*
-int movePushMotor(int direction, int step, long int steps, bool isUp, int speed) {
-  // Set the motor direction
-  digitalWrite(direction, isUp ? HIGH : LOW); // LOW for up (CW), HIGH for down (CCW)
 
-  for (long int i = 0; i < steps; i++) {
-    // Check the respective limit switch
-    if (isUp && digitalRead(pushlimitSwitchUp) == LOW) {
-      Serial.println("Upper limit switch triggered, stopping motor.");
-      return -1; // Stop motor movement return -1 means the operation done
-    } else if (!isUp && digitalRead(pushlimitSwitchDown) == LOW) {
-      Serial.println("Lower limit switch triggered, stopping motor.");
-      return 1; // Stop motor movement means the opertation done and the cream is empty-move up
-    }
 
-    // Generate a step pulse 
-    digitalWrite(step, HIGH);
-    delayMicroseconds(speed); // Adjust delay for speed
-    digitalWrite(step, LOW);
-    delayMicroseconds(speed); // Adjust delay for speed
+void dropBiscuit() {
+  if (!biscuitDropped) {
+    myServoUP.write(0);
+    delay(200);
+    myServoUP.write(72);
+    delay(2000);
+
+    myServoDown.write(0);
+    delay(500);
+    myServoDown.write(100);
+    delay(800);
+
+    Serial.println("Biscuit dropped.");
+    biscuitDropped = true;
+      digitalWrite(RELAY_PIN, HIGH);
   }
 }
-*/
-/*void handelPushMovement(){
-  //  movePushMotor(directionPin,stepPin,200000,false,70);
- movePushMotor(directionPin,stepPin,200000,false,300);
-    movePushMotor(directionPin,stepPin,200000,true,300);
-    //movePushMotor(directionPin,stepPin,20000,true,70);
+void handleChocolate() {
+  double tempC = ktc.readCelsius();
+  Serial.print("Chocolate Temperature (C): ");
+  Serial.println(tempC);
 
-}*/
+  //digitalWrite(heaterPin, HIGH);
+  //delay(heatTime);
+  //digitalWrite(heaterPin, LOW);
 
+  Serial.println("Chocolate heated. Opening nozzle...");
+  for (int i = 0; i < 7; i++) {
+    myStepper.step(STEPS_PER_REV); // فتح
+     stepper.step(STEPS_PER_REV);
+  }
+  delay(5000);
+  for (int i = 0; i < 7; i++) {
+    myStepper.step(-STEPS_PER_REV); // إغلاق
+     stepper.step(STEPS_PER_REV);
+  }
+
+  Serial.println("Nozzle closed.");
+}
 
 void setup() {
   Serial.begin(9600);  
@@ -199,10 +267,6 @@ void setup() {
   pinMode(mixerUp, OUTPUT);          
   pinMode(mixerDown, OUTPUT); 
 
-  pinMode(valveOpenPin, OUTPUT);
-pinMode(valveClosePin, OUTPUT);
-pinMode(directionPin, OUTPUT);
-pinMode(stepPin, OUTPUT);
 
  pinMode(pushlimitSwitchUp, INPUT_PULLUP);
     pinMode(pushlimitSwitchDown, INPUT_PULLUP);
@@ -216,84 +280,118 @@ pinMode(stepPin, OUTPUT);
   digitalWrite(mixerOne, HIGH); 
   digitalWrite(mixerTwo, HIGH);
 
+ digitalWrite(valveClosePin,HIGH);
+  digitalWrite(valveOpenPin, HIGH);
    myServo.attach(33);             // توصيل السيرفو إلى الدبوس D9
   myServo.write(90);   
+
+ digitalWrite(RELAY_PIN, LOW);
+
+   myServoUP.attach(37);
+  myServoDown.attach(36);
+  myServoUP.write(72);
+  myServoDown.write(100);
+  pinMode(IR_SENSOR_1_PIN, INPUT);
+  pinMode(IR_SENSOR_2_PIN, INPUT);
+  pinMode(RELAY_PIN, OUTPUT);
+
+  pinMode(heaterPin, OUTPUT);
+  digitalWrite(heaterPin, HIGH);
+  myStepper.setSpeed(30);
+
+//nema17
+   stepper.setSpeed(100);
+  //nema17
+  // إعداد المنافذ كإخراج
+  pinMode(IN1, OUTPUT);
+  pinMode(IN2, OUTPUT);
+  pinMode(IN3, OUTPUT);
+  pinMode(IN4, OUTPUT);
 }
 
 static bool startupComplete = false;
 char key='T';
 void loop() {
+    while(key!='1'&&key!='2'){
+     key=keypad.getKey();    // قراءة الزر المضغوط
+      Serial.println(key);
+    //mixerMoveUp();
+    //forwardFunction();
+    }
 
  if (!startupComplete) {
     Serial.println("Startup complete. Waiting for input...");
     startupComplete = true;
-    delay(100); // Ensure stable readings
-      reverseFunction();
-      delay(6000);
+            // valveClose();
+             //delay(5000);
+             //stopValveMovement();
+     reverseFunction();
+    // delay(100000);
+     delay(5000);
   }
 
  if (digitalRead(railwaylimitSwitchForward) == LOW) {  
-
+  if(up==true){
     stopRailwayMovement();
-  // Check for limit switch presses
-// Forward switch pressed
     Serial.println("Forward limit switch pressed. Stopping forward movement.");
- //   reverseFunction();  // Call reverse function when forward button is pressed
      valveOpen();
      delay(5000);
      stopValveMovement();
-   for(int i=0;i<65;i++)
+   for(int i=0;i<55;i++)
     moveStepper(LOW, 70, stepsPerRevolution);
-   
-    // Move down at speed 300 for one full revolution
-    //moveStepper(LOW, 300, stepsPerRevolution);
-  Serial.println("Fast1 end .");
-    // Continue moving down at speed 300 until the lower limit switch is pressed
-    while (digitalRead(pushlimitSwitchDown) == HIGH) {
-      moveStepper(LOW, 300, stepsPerRevolution); // Small steps to keep checking the switch
-    }
+       while (digitalRead(pushlimitSwitchDown) == HIGH) {
+      moveStepper(LOW, 300, stepsPerRevolution); 
+       }
+    creamFlag=true;
+    up=false;
+  }
+  }
 
-    // Change direction to up
-    // Move up at speed 300 for one full revolution
+  
+ if (digitalRead(pushlimitSwitchDown) == LOW) {  
+  if(creamIR==true&&isCocoaDone==true){
+    creamIR=false;
+    isCocoaDone=false;
     for(int i=0;i<65;i++)
     moveStepper(HIGH, 300, stepsPerRevolution);
-    // Continue moving up at speed 70 until the upper limit switch is pressed
+    
     
    while (digitalRead(pushlimitSwitchUp) == HIGH) {
-      moveStepper(HIGH, 70, stepsPerRevolution); // Small steps to keep checking the switch
+      moveStepper(HIGH, 70, stepsPerRevolution);
     }
      reverseFunction();
-
+   delay(5000);
+   //stopRailwayMovement();
    Serial.println("Forword.");
-
-
   }
+ }
+
+  
 
   if (digitalRead(railwaylimitSwitchReverse) == LOW) {  // Reverse switch pressed
     Serial.println("Reverse limit switch pressed. Stopping reverse movement.");
     forwardFunction();
-    delay(1000);
+    delay(1500);
     stopRailwayMovement();
-    while(true){
-     key=keypad.getKey();    // قراءة الزر المضغوط
-     if(key=='1'||key=='2')
-     break;
-     Serial.println(key);
-    }
+
+  
     coacoAdding(key);
     mixerMoveDown();  // Start moving the mixer down when reverse button is pressed
   }
 
   if (digitalRead(mixerlimitSwitchUp) == LOW) {  // Mixer Up switch pressed
     mixerMoveDown();
-    delay(1000);
+    delay(1500);
     stopMixersMotor();
     forwardFunction();  // Start forward movement when mixerUp is pressed
+      dropBiscuit();
+      up=true;
+
   }
 
   if (digitalRead(mixerlimitSwitchDown) == LOW) {  // Mixer Down switch pressed
     mixerMoveUp();
-    delay(1000);
+    delay(1500);
     stopMixersMotor();
     if (!isMixerRunning) {
       startMixers();  // Start mixers when mixerDown switch is pressed
@@ -304,10 +402,45 @@ void loop() {
   if (isMixerRunning && (millis() - mixerStartMillis >= mixerStartTime)) {
     stopMixers();  // Stop the mixers after 20 minutes
     mixerMoveUp();  // Move the mixer up after 20 minutes
+      Serial.println("test test");
+    stepperC=true;
+    delay(5000);
     isMixerRunning = false;  // Stop the mixer running state
   }
   
-  // Add any other logic needed for your system
+    if (digitalRead(IR_SENSOR_1_PIN) == LOW) {
+    digitalWrite(RELAY_PIN, LOW);
+    Serial.println("Biscuit detected at IR sensor 1. Waiting for cream...");
+
+    if (creamFlag) {
+      Serial.println("Cream added. Resuming line...");
+      creamFlag = false;
+      delay(500);
+      digitalWrite(RELAY_PIN, HIGH);
+    //  delay(3000);
+      creamIR=true;
+    }
+  }
+
+  if (digitalRead(IR_SENSOR_2_PIN) == LOW) {
+    digitalWrite(RELAY_PIN, LOW);
+    Serial.println("Biscuit detected at IR sensor 2. Waiting for chocolate...");
+
+   // if (chocolateFlag) {
+      handleChocolate();
+     // chocolateFlag = false;
+      isCocoaDone =true;
+       stepperC=false;
+      delay(500);
+      digitalWrite(RELAY_PIN, HIGH);
+      delay(3000);
+   // }
+  }
+
+  if(stepperC){
+        stepper.step(STEPS_PER_REV);
+  }
+
 }
 
 
