@@ -5,7 +5,7 @@
 #include "max6675.h"
 
 #define pushlimitSwitchUp 20
-#define pushlimitSwitchDown 19
+#define pushlimitSwitchDown 24
 #define valveOpenPin 40
 #define valveClosePin 41
 #define directionPin 3
@@ -18,7 +18,7 @@
 #define railwayForward 4
 #define railwayReverse 5  
 
-#define mixerlimitSwitchUp 10
+#define mixerlimitSwitchUp A0
 #define mixerlimitSwitchDown 18 
 #define mixerOne 26
 #define mixerTwo 27
@@ -75,15 +75,15 @@ volatile bool stopReverse = false;
 
 volatile bool stopMixerUP = false;  
 volatile bool stopMixerDown = false;  
-bool isMixing = false;
+volatile bool isMixing = false;
 
 
-bool isCocoaDone = false;
+volatile bool isCocoaDone = false;
 
 
 // تعريف أعلام التحكم
 bool creamFlag = false;       // علم خاص بالكريمة
-//bool chocolateFlag = false;   // علم خاص بالشوكولاتة
+bool chocolateFlag = false;   // علم خاص بالشوكولاتة
 bool biscuitDropped = false; // علم لتنزيل البسكويت مرة واحدة
 bool creamIR=false;
 bool stepperC=false;
@@ -239,14 +239,15 @@ void handleChocolate() {
   //digitalWrite(heaterPin, LOW);
 
   Serial.println("Chocolate heated. Opening nozzle...");
-  for (int i = 0; i < 7; i++) {
+  for (int i = 0; i < 6; i++) {
     myStepper.step(STEPS_PER_REV); // فتح
      stepper.step(STEPS_PER_REV);
   }
+
   delay(5000);
-  for (int i = 0; i < 7; i++) {
+  for (int i = 0; i < 6; i++) {
     myStepper.step(-STEPS_PER_REV); // إغلاق
-     stepper.step(STEPS_PER_REV);
+    // stepper.step(STEPS_PER_REV);
   }
 
   Serial.println("Nozzle closed.");
@@ -315,8 +316,8 @@ void loop() {
     while(key!='1'&&key!='2'){
      key=keypad.getKey();    // قراءة الزر المضغوط
       Serial.println(key);
-    //mixerMoveUp();
-    //forwardFunction();
+  // mixerMoveDown();
+  forwardFunction();
     }
 
  if (!startupComplete) {
@@ -334,10 +335,10 @@ void loop() {
   if(up==true){
     stopRailwayMovement();
     Serial.println("Forward limit switch pressed. Stopping forward movement.");
-     valveOpen();
-     delay(5000);
-     stopValveMovement();
-   for(int i=0;i<55;i++)
+    // valveOpen();
+     //delay(5000);
+     //stopValveMovement();
+   for(int i=0;i<50;i++)
     moveStepper(LOW, 70, stepsPerRevolution);
        while (digitalRead(pushlimitSwitchDown) == HIGH) {
       moveStepper(LOW, 300, stepsPerRevolution); 
@@ -352,7 +353,7 @@ void loop() {
   if(creamIR==true&&isCocoaDone==true){
     creamIR=false;
     isCocoaDone=false;
-    for(int i=0;i<65;i++)
+    for(int i=0;i<55;i++)
     moveStepper(HIGH, 300, stepsPerRevolution);
     
     
@@ -398,6 +399,13 @@ void loop() {
     }
   }
 
+  if(isMixerRunning){
+    forwardFunction();
+    delay(5000);
+    reverseFunction();
+    delay(5000);
+    stopRailwayMovement();
+  }
   // If mixers are running and 20 minutes have passed (change to 1200000 ms for 20 minutes)
   if (isMixerRunning && (millis() - mixerStartMillis >= mixerStartTime)) {
     stopMixers();  // Stop the mixers after 20 minutes
@@ -417,8 +425,9 @@ void loop() {
       creamFlag = false;
       delay(500);
       digitalWrite(RELAY_PIN, HIGH);
-    //  delay(3000);
+      delay(3000);
       creamIR=true;
+      chocolateFlag=true;
     }
   }
 
@@ -426,15 +435,15 @@ void loop() {
     digitalWrite(RELAY_PIN, LOW);
     Serial.println("Biscuit detected at IR sensor 2. Waiting for chocolate...");
 
-   // if (chocolateFlag) {
+    if (chocolateFlag) {
       handleChocolate();
-     // chocolateFlag = false;
+     chocolateFlag = false;
       isCocoaDone =true;
        stepperC=false;
       delay(500);
       digitalWrite(RELAY_PIN, HIGH);
       delay(3000);
-   // }
+    }
   }
 
   if(stepperC){
